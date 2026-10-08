@@ -14,7 +14,7 @@ import numpy as np
 from sklearn.datasets import fetch_california_housing, make_regression
 from sklearn.ensemble import HistGradientBoostingRegressor
 from sklearn.metrics import mean_absolute_error, r2_score
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import KFold, cross_val_score, train_test_split
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
@@ -41,9 +41,13 @@ def train(offline: bool = False, seed: int = 42) -> tuple[Pipeline, dict[str, fl
     x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.2, random_state=seed)
     model = build_model(seed).fit(x_train, y_train)
     pred = model.predict(x_test)
+    cv = KFold(n_splits=5, shuffle=True, random_state=seed)
+    cv_r2 = cross_val_score(build_model(seed), x, y, cv=cv, scoring="r2")
     metrics = {
         "r2": float(r2_score(y_test, pred)),
         "mae": float(mean_absolute_error(y_test, pred)),
+        "cv_r2_mean": float(cv_r2.mean()),
+        "cv_r2_std": float(cv_r2.std()),
     }
     return model, metrics
 
