@@ -13,6 +13,7 @@ import joblib
 import numpy as np
 from sklearn.datasets import fetch_california_housing, make_regression
 from sklearn.ensemble import HistGradientBoostingRegressor
+from sklearn.inspection import permutation_importance
 from sklearn.metrics import mean_absolute_error, r2_score
 from sklearn.model_selection import KFold, cross_val_score, train_test_split
 from sklearn.pipeline import Pipeline
@@ -34,6 +35,15 @@ def build_model(seed: int = 42) -> Pipeline:
             ("model", HistGradientBoostingRegressor(max_iter=300, random_state=seed)),
         ]
     )
+
+
+def importance_report(offline: bool = False, seed: int = 42) -> dict[str, float]:
+    """Permutation importance (mean R2 drop) of a model evaluated on the test split."""
+    x, y = load_data(offline, seed)
+    x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.2, random_state=seed)
+    model = build_model(seed).fit(x_train, y_train)
+    result = permutation_importance(model, x_test, y_test, n_repeats=5, random_state=seed)
+    return {f"feature_{i}": float(v) for i, v in enumerate(result.importances_mean)}
 
 
 def train(offline: bool = False, seed: int = 42) -> tuple[Pipeline, dict[str, float]]:
@@ -63,6 +73,8 @@ def main() -> None:
     out.mkdir(parents=True, exist_ok=True)
     joblib.dump(model, out / "model.joblib")
     (out / "metrics.json").write_text(json.dumps(metrics, indent=2))
+    report = importance_report(offline=args.offline)
+    (out / "importance.json").write_text(json.dumps(report, indent=2))
     print(json.dumps(metrics, indent=2))
 
 
