@@ -54,3 +54,25 @@ def test_interval_coverage_on_test_split():
     assert half > 0
     coverage = np.mean(np.abs(y_test - model.predict(x_test)) <= half)
     assert 0.85 <= coverage <= 0.95
+
+
+def test_metrics_json_has_required_keys(tmp_path):
+    import json
+    import sys
+
+    from house_price.model import main
+
+    sys.argv = ["model", "--offline", "--out", str(tmp_path)]
+    main()
+    metrics = json.loads((tmp_path / "metrics.json").read_text())
+    assert {"mae", "rmse", "r2", "cv_r2_mean"} <= metrics.keys()
+    assert metrics["rmse"] >= metrics["mae"] > 0
+
+
+def test_r2_not_below_committed_baseline():
+    import json
+    from pathlib import Path
+
+    baseline = json.loads((Path(__file__).parent / "baseline.json").read_text())
+    _, metrics = train(offline=True)
+    assert metrics["r2"] >= baseline["r2"] - 0.02
