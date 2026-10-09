@@ -19,6 +19,8 @@ from sklearn.model_selection import KFold, cross_val_score, train_test_split
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
+INTERVAL_ALPHA = 0.1  # 90% prediction interval
+
 
 def load_data(offline: bool = False, seed: int = 42) -> tuple[np.ndarray, np.ndarray]:
     if offline:
@@ -37,6 +39,16 @@ def build_model(seed: int = 42) -> Pipeline:
     )
 
 
+def conformal_quantile(
+    model: Pipeline, x_cal: np.ndarray, y_cal: np.ndarray, alpha: float
+) -> float:
+    """Split conformal half-width: finite-sample corrected (1 - alpha) quantile of |residuals|."""
+    scores = np.abs(y_cal - model.predict(x_cal))
+    n = len(scores)
+    level = min(1.0, np.ceil((n + 1) * (1 - alpha)) / n)
+    return float(np.quantile(scores, level, method="higher"))
+
+
 def importance_report(offline: bool = False, seed: int = 42) -> dict[str, float]:
     """Permutation importance (mean R2 drop) of a model evaluated on the test split."""
     x, y = load_data(offline, seed)
@@ -49,7 +61,12 @@ def importance_report(offline: bool = False, seed: int = 42) -> dict[str, float]
 def train(offline: bool = False, seed: int = 42) -> tuple[Pipeline, dict[str, float]]:
     x, y = load_data(offline, seed)
     x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.2, random_state=seed)
-    model = build_model(seed).fit(x_train, y_train)
+    x_fit, x_cal, y_fit, y_cal = train_test_split(
+        x_train, y_train, test_size=0.25, random_state=seed
+    )
+    model = build_model(seed).fit(x_fit, y_fit)
+    # Half-width of the 90% prediction interval, calibrated on the held-out split.
+    model.interval_halfwidth_ = conformal_quantile(model, x_cal, y_cal, INTERVAL_ALPHA)
     pred = model.predict(x_test)
     cv = KFold(n_splits=5, shuffle=True, random_state=seed)
     cv_r2 = cross_val_score(build_model(seed), x, y, cv=cv, scoring="r2")

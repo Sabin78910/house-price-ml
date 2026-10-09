@@ -25,7 +25,7 @@ def test_parse_features_invalid(raw):
 
 def test_main_prints_prediction(model_path, capsys):
     main(["--model", str(model_path), "--features", "0,0,0,0,0,0,0,0"])
-    float(capsys.readouterr().out.strip())
+    float(capsys.readouterr().out.split()[0])
 
 
 def test_main_bad_count_exits(model_path):
@@ -48,3 +48,9 @@ def test_parse_features_count_message(raw):
 def test_main_non_finite_exits(model_path):
     with pytest.raises(SystemExit):
         main(["--model", str(model_path), "--features", "1,2,3,4,5,6,7,nan"])
+
+
+def test_main_prints_interval(model_path, capsys):
+    main(["--model", str(model_path), "--features", "0,0,0,0,0,0,0,0"])
+    out = capsys.readouterr().out
+    assert "90% interval" in out
