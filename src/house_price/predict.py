@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import math
 
 import joblib
 
@@ -16,6 +17,9 @@ def parse_features(raw: str) -> list[float]:
         raise ValueError(f"features must be numbers: {exc}") from exc
     if len(values) != N_FEATURES:
         raise ValueError(f"expected {N_FEATURES} features, got {len(values)}")
+    bad = [i for i, v in enumerate(values) if not math.isfinite(v)]
+    if bad:
+        raise ValueError(f"features must be finite (no NaN/inf); bad positions: {bad}")
     return values
 
 
