@@ -2,7 +2,7 @@ import joblib
 import pytest
 
 from house_price.model import train
-from house_price.predict import explain, main, parse_features
+from house_price.predict import drift_warnings, explain, main, parse_features
 
 
 @pytest.fixture(scope="module")
@@ -87,3 +87,37 @@ def test_main_explain_flag(model_path, capsys):
 def test_main_no_explain_by_default(model_path, capsys):
     main(["--model", str(model_path), "--features", "3,-2,1,0.5,-1.5,2,0,1"])
     assert "feature_" not in capsys.readouterr().out
+
+
+def test_train_saves_feature_stats():
+    model, _ = train(offline=True)
+    assert len(model.train_means_) == 8
+    assert len(model.train_stds_) == 8
+
+
+def test_drift_warnings_flags_far_inputs(model_path):
+    model = joblib.load(model_path)
+    typical = [float(m) for m in model.train_means_]
+    assert drift_warnings(model, typical) == []
+    far = list(typical)
+    far[2] += 4 * float(model.train_stds_[2])
+    flagged = drift_warnings(model, far)
+    assert [i for i, _ in flagged] == [2]
+    assert flagged[0][1] > 3
+
+
+def test_drift_warnings_boundary_and_missing_stats(model_path):
+    model = joblib.load(model_path)
+    edge = [float(m) for m in model.train_means_]
+    edge[0] += 3 * float(model.train_stds_[0])
+    assert drift_warnings(model, edge) == []
+
+    class Bare:
+        pass
+
+    assert drift_warnings(Bare(), edge) == []
+
+
+def test_main_prints_drift_warning(model_path, capsys):
+    main(["--model", str(model_path), "--features", "1000,0,0,0,0,0,0,0"])
+    assert "feature_0" in capsys.readouterr().err
