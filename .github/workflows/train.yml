@@ -20,7 +20,7 @@ jobs:
       - run: pip install -r requirements.txt
       - run: PYTHONPATH=src python -m house_price.model --out artifacts
       - run: cat artifacts/metrics.json >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: model-${{ github.run_number }}
           path: artifacts/
