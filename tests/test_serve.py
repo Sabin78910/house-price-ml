@@ -65,3 +65,19 @@ def test_predict_drift_warnings(base_url):
     assert normal["warnings"] == []
     _, far = post(base_url + "/predict", {"features": [1000.0] + [0.0] * 7})
     assert far["warnings"][0]["feature"] == 0
+
+
+def test_index_serves_form(base_url):
+    with urllib.request.urlopen(base_url + "/") as resp:
+        assert resp.status == 200
+        assert resp.headers["Content-Type"].startswith("text/html")
+        html = resp.read().decode()
+    assert "<form" in html
+    assert "/predict" in html
+    assert html.count('type="number"') == 8
+
+
+def test_predict_returns_top_factors(base_url):
+    _, body = post(base_url + "/predict", {"features": [1.0] * 8})
+    assert len(body["factors"]) == 3
+    assert set(body["factors"][0]) == {"feature", "effect"}
