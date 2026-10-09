@@ -34,7 +34,12 @@ def main(argv: list[str] | None = None) -> None:
     except ValueError as exc:
         parser.error(str(exc))
     model = joblib.load(args.model)
-    print(float(model.predict([features])[0]))
+    price = float(model.predict([features])[0])
+    half = getattr(model, "interval_halfwidth_", None)
+    if half is None:
+        print(price)
+    else:
+        print(f"{price} (90% interval: {price - half} to {price + half})")
 
 
 if __name__ == "__main__":
