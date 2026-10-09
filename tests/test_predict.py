@@ -31,3 +31,20 @@ def test_main_prints_prediction(model_path, capsys):
 def test_main_bad_count_exits(model_path):
     with pytest.raises(SystemExit):
         main(["--model", str(model_path), "--features", "1,2"])
+
+
+@pytest.mark.parametrize("bad", ["nan", "inf", "-inf", "NaN"])
+def test_parse_features_rejects_non_finite(bad):
+    with pytest.raises(ValueError, match="finite"):
+        parse_features(f"1,2,3,4,5,6,7,{bad}")
+
+
+@pytest.mark.parametrize("raw", ["1,2,3", "1,2,3,4,5,6,7,8,9"])
+def test_parse_features_count_message(raw):
+    with pytest.raises(ValueError, match="expected 8 features"):
+        parse_features(raw)
+
+
+def test_main_non_finite_exits(model_path):
+    with pytest.raises(SystemExit):
+        main(["--model", str(model_path), "--features", "1,2,3,4,5,6,7,nan"])
