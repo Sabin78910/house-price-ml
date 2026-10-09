@@ -1,4 +1,4 @@
-from house_price.model import build_model, train
+from house_price.model import build_model, load_data, train
 
 
 def test_offline_training_is_accurate():
@@ -31,3 +31,13 @@ def test_importance_report_has_8_entries(tmp_path):
     report = json.loads((tmp_path / "importance.json").read_text())
     assert len(report) == 8
     assert all(isinstance(v, float) for v in report.values())
+
+
+def test_training_is_reproducible_with_same_seed():
+    import numpy as np
+
+    x, _ = load_data(offline=True)
+    model_a, metrics_a = train(offline=True, seed=7)
+    model_b, metrics_b = train(offline=True, seed=7)
+    np.testing.assert_array_equal(model_a.predict(x), model_b.predict(x))
+    assert metrics_a == metrics_b
