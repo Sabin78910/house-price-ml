@@ -18,3 +18,16 @@ def test_metrics_include_cv_r2():
     assert {"cv_r2_mean", "cv_r2_std"} <= metrics.keys()
     assert metrics["cv_r2_mean"] > 0.8
     assert metrics["cv_r2_std"] >= 0
+
+
+def test_importance_report_has_8_entries(tmp_path):
+    import json
+    import sys
+
+    from house_price.model import main
+
+    sys.argv = ["model", "--offline", "--out", str(tmp_path)]
+    main()
+    report = json.loads((tmp_path / "importance.json").read_text())
+    assert len(report) == 8
+    assert all(isinstance(v, float) for v in report.values())
