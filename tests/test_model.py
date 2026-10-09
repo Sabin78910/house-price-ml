@@ -41,3 +41,16 @@ def test_training_is_reproducible_with_same_seed():
     model_b, metrics_b = train(offline=True, seed=7)
     np.testing.assert_array_equal(model_a.predict(x), model_b.predict(x))
     assert metrics_a == metrics_b
+
+
+def test_interval_coverage_on_test_split():
+    import numpy as np
+    from sklearn.model_selection import train_test_split
+
+    model, _ = train(offline=True)
+    x, y = load_data(offline=True)
+    _, x_test, _, y_test = train_test_split(x, y, test_size=0.2, random_state=42)
+    half = model.interval_halfwidth_
+    assert half > 0
+    coverage = np.mean(np.abs(y_test - model.predict(x_test)) <= half)
+    assert 0.85 <= coverage <= 0.95
