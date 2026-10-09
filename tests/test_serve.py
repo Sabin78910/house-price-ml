@@ -58,3 +58,10 @@ def test_predict_bad_input(base_url, body):
 def test_unknown_path_404(base_url):
     status, _ = post(base_url + "/other", {"features": [0] * 8})
     assert status == 404
+
+
+def test_predict_drift_warnings(base_url):
+    _, normal = post(base_url + "/predict", {"features": [0.0] * 8})
+    assert normal["warnings"] == []
+    _, far = post(base_url + "/predict", {"features": [1000.0] + [0.0] * 7})
+    assert far["warnings"][0]["feature"] == 0

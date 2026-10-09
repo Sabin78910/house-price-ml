@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import argparse
 import math
+import sys
 
 import joblib
 
 N_FEATURES = 8
+DRIFT_Z = 3.0  # warn when an input is further than this many training std devs from the mean
 
 
 def parse_features(raw: str) -> list[float]:
@@ -35,6 +37,19 @@ def explain(model, features: list[float], top: int = 3) -> list[tuple[int, float
     return effects[:top]
 
 
+def drift_warnings(model, features: list[float]) -> list[tuple[int, float]]:
+    """(feature index, z-score) for inputs more than DRIFT_Z training std devs from the mean."""
+    means = getattr(model, "train_means_", None)
+    stds = getattr(model, "train_stds_", None)
+    if means is None or stds is None:
+        return []
+    return [
+        (i, abs(v - m) / s)
+        for i, (v, m, s) in enumerate(zip(features, means, stds, strict=True))
+        if s > 0 and abs(v - m) / s > DRIFT_Z
+    ]
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--model", default="artifacts/model.joblib", help="saved model path")
@@ -53,6 +68,8 @@ def main(argv: list[str] | None = None) -> None:
         print(price)
     else:
         print(f"{price} (90% interval: {price - half} to {price + half})")
+    for i, z in drift_warnings(model, features):
+        print(f"warning: feature_{i} is {z:.1f} std devs from training mean", file=sys.stderr)
     if args.explain:
         for i, effect in explain(model, features):
             print(f"feature_{i}: {effect:+.4f}")
