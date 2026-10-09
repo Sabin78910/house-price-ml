@@ -68,6 +68,8 @@ def train(offline: bool = False, seed: int = 42) -> tuple[Pipeline, dict[str, fl
     # Half-width of the 90% prediction interval, calibrated on the held-out split.
     model.interval_halfwidth_ = conformal_quantile(model, x_cal, y_cal, INTERVAL_ALPHA)
     model.train_medians_ = np.median(x_fit, axis=0)
+    model.train_means_ = x_fit.mean(axis=0)
+    model.train_stds_ = x_fit.std(axis=0)
     pred = model.predict(x_test)
     cv = KFold(n_splits=5, shuffle=True, random_state=seed)
     cv_r2 = cross_val_score(build_model(seed), x, y, cv=cv, scoring="r2")

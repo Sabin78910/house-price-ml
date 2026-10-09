@@ -8,7 +8,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import joblib
 
-from house_price.predict import parse_features
+from house_price.predict import drift_warnings, parse_features
 
 
 def make_handler(model):
@@ -41,7 +41,14 @@ def make_handler(model):
             half = getattr(model, "interval_halfwidth_", 0.0)
             self._send(
                 200,
-                {"price": price, "interval_low": price - half, "interval_high": price + half},
+                {
+                    "price": price,
+                    "interval_low": price - half,
+                    "interval_high": price + half,
+                    "warnings": [
+                        {"feature": i, "z_score": z} for i, z in drift_warnings(model, features)
+                    ],
+                },
             )
 
         def log_message(self, format, *args) -> None:  # noqa: A002
