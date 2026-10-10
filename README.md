@@ -15,6 +15,8 @@ PYTHONPATH=src .venv/bin/python -m house_price.model --offline # synthetic
 ## API / Output
 Outputs `artifacts/model.joblib` (plus `model.joblib.sha256`, verified by `predict` and `serve` before loading; a mismatch is refused, a missing checksum file only warns) and `artifacts/metrics.json` (R², MAE).
 
+Batch prediction: `PYTHONPATH=src .venv/bin/python -m house_price.predict --csv input.csv --output out.csv` (8 numeric columns, header optional; output adds `prediction,lower,upper`; bad rows are reported as `line N: reason` on stderr and the exit code is non-zero).
+
 ## Automation (runs on GitHub, no laptop needed)
 | Workflow | Trigger | What it does |
 |---|---|---|
