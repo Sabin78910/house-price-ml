@@ -13,7 +13,7 @@ PYTHONPATH=src .venv/bin/python -m house_price.model --offline # synthetic
 ```
 
 ## API / Output
-Outputs `artifacts/model.joblib` and `artifacts/metrics.json` (R², MAE).
+Outputs `artifacts/model.joblib` (plus `model.joblib.sha256`, verified by `predict` and `serve` before loading; a mismatch is refused, a missing checksum file only warns) and `artifacts/metrics.json` (R², MAE).
 
 ## Automation (runs on GitHub, no laptop needed)
 | Workflow | Trigger | What it does |

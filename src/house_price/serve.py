@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-import joblib
-
+from house_price.model import load_model
 from house_price.predict import drift_warnings, explain, parse_features
 
 N_FEATURES = 8
@@ -135,7 +135,11 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8000)
     args = parser.parse_args(argv)
-    server = ThreadingHTTPServer((args.host, args.port), make_handler(joblib.load(args.model)))
+    try:
+        model = load_model(args.model)
+    except ValueError as exc:
+        sys.exit(f"error: {exc}")
+    server = ThreadingHTTPServer((args.host, args.port), make_handler(model))
     print(f"serving on http://{args.host}:{args.port}/predict")
     server.serve_forever()
 
