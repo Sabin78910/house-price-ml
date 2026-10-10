@@ -202,3 +202,38 @@ def test_error_by_region_file_written_offline(tmp_path):
     written = json.loads((tmp_path / "error_by_region.json").read_text())
     assert sum(c["n"] for c in written.values()) == 400
     assert all(c.get("coverage", 0.0) <= 1.0 for c in written.values())
+
+
+def test_error_by_band_interval_known_values():
+    import numpy as np
+
+    from house_price.model import error_by_band
+
+    y_pred = np.arange(1, 10, dtype=float)
+    y_true = y_pred.copy()
+    y_true[[0, 1, 5, 8]] += 10  # two misses in low, one in mid, one in high
+    result = error_by_band(y_true, y_pred, y_pred - 1, y_pred + 1)
+    assert result["low"]["coverage"] == 1 / 3
+    assert result["mid"]["coverage"] == 2 / 3
+    assert result["high"]["coverage"] == 2 / 3
+    assert result["low"]["mean_rel_width"] == 1.0  # width 2 / mean pred 2
+    assert result["high"]["mean_rel_width"] == 2 / 8.0
+
+
+def test_error_by_band_coverage_matches_global_offline():
+    import json
+    import sys
+    import tempfile
+    from pathlib import Path
+
+    from house_price.model import main
+
+    with tempfile.TemporaryDirectory() as d:
+        sys.argv = ["model", "--offline", "--out", d]
+        main()
+        bands = json.loads((Path(d) / "error_by_price_band.json").read_text())
+        metrics = json.loads((Path(d) / "metrics.json").read_text())
+    n = sum(b["n"] for b in bands.values())
+    assert all(0.0 <= b["coverage"] <= 1.0 and b["mean_rel_width"] > 0 for b in bands.values())
+    weighted = sum(b["coverage"] * b["n"] for b in bands.values()) / n
+    assert abs(weighted - metrics["interval_coverage"]) < 1e-9
