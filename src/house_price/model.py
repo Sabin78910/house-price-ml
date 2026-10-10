@@ -49,6 +49,20 @@ def conformal_quantile(
     return float(np.quantile(scores, level, method="higher"))
 
 
+def error_by_band(y_true: np.ndarray, y_pred: np.ndarray) -> dict[str, dict[str, float]]:
+    """MAE and mean signed error (true - pred) per tercile band of predicted value."""
+    order = np.argsort(y_pred, kind="stable")
+    result = {}
+    for name, idx in zip(("low", "mid", "high"), np.array_split(order, 3), strict=True):
+        err = y_true[idx] - y_pred[idx]
+        result[name] = {
+            "mae": float(np.mean(np.abs(err))),
+            "bias": float(np.mean(err)),
+            "n": int(len(idx)),
+        }
+    return result
+
+
 def importance_report(offline: bool = False, seed: int = 42) -> dict[str, float]:
     """Permutation importance (mean R2 drop) of a model evaluated on the test split."""
     x, y = load_data(offline, seed)
@@ -71,6 +85,7 @@ def train(offline: bool = False, seed: int = 42) -> tuple[Pipeline, dict[str, fl
     model.train_means_ = x_fit.mean(axis=0)
     model.train_stds_ = x_fit.std(axis=0)
     pred = model.predict(x_test)
+    model.error_by_band_ = error_by_band(y_test, pred)
     cv = KFold(n_splits=5, shuffle=True, random_state=seed)
     cv_r2 = cross_val_score(build_model(seed), x, y, cv=cv, scoring="r2")
     metrics = {
@@ -95,6 +110,7 @@ def main() -> None:
     out.mkdir(parents=True, exist_ok=True)
     joblib.dump(model, out / "model.joblib")
     (out / "metrics.json").write_text(json.dumps(metrics, indent=2))
+    (out / "error_by_price_band.json").write_text(json.dumps(model.error_by_band_, indent=2))
     report = importance_report(offline=args.offline)
     (out / "importance.json").write_text(json.dumps(report, indent=2))
     print(json.dumps(metrics, indent=2))
