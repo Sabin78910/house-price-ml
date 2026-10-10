@@ -6,7 +6,7 @@ import argparse
 import math
 import sys
 
-import joblib
+from house_price.model import load_model
 
 N_FEATURES = 8
 DRIFT_Z = 3.0  # warn when an input is further than this many training std devs from the mean
@@ -61,7 +61,10 @@ def main(argv: list[str] | None = None) -> None:
         features = parse_features(args.features)
     except ValueError as exc:
         parser.error(str(exc))
-    model = joblib.load(args.model)
+    try:
+        model = load_model(args.model)
+    except ValueError as exc:
+        sys.exit(f"error: {exc}")
     price = float(model.predict([features])[0])
     half = getattr(model, "interval_halfwidth_", None)
     if half is None:

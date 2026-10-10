@@ -6,7 +6,9 @@ Uses a synthetic dataset when `offline=True` so tests and CI never need a downlo
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import sys
 from pathlib import Path
 
 import joblib
@@ -99,6 +101,29 @@ def train(offline: bool = False, seed: int = 42) -> tuple[Pipeline, dict[str, fl
     return model, metrics
 
 
+def _sha256(path: Path) -> str:
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def save_model(model: Pipeline, path: Path) -> None:
+    """Dump the model and write `<path>.sha256` next to it."""
+    path = Path(path)
+    joblib.dump(model, path)
+    path.with_name(path.name + ".sha256").write_text(_sha256(path) + "\n")
+
+
+def load_model(path: str | Path) -> Pipeline:
+    """Load a model after verifying its SHA-256 checksum (warns if the checksum file is absent)."""
+    path = Path(path)
+    sum_path = path.with_name(path.name + ".sha256")
+    if sum_path.exists():
+        if _sha256(path) != sum_path.read_text().strip():
+            raise ValueError(f"checksum mismatch for {path}: refusing to load")
+    else:
+        print(f"warning: {sum_path} not found; loading {path} unverified", file=sys.stderr)
+    return joblib.load(path)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--offline", action="store_true", help="use synthetic data")
@@ -108,7 +133,7 @@ def main() -> None:
     model, metrics = train(offline=args.offline)
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
-    joblib.dump(model, out / "model.joblib")
+    save_model(model, out / "model.joblib")
     (out / "metrics.json").write_text(json.dumps(metrics, indent=2))
     (out / "error_by_price_band.json").write_text(json.dumps(model.error_by_band_, indent=2))
     report = importance_report(offline=args.offline)
