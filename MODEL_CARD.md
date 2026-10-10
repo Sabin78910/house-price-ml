@@ -26,6 +26,8 @@ From `metrics.json` produced by `PYTHONPATH=src python -m house_price.model --of
 | cv_r2_mean | 0.953 |
 | cv_r2_std | 0.005 |
 
+`error_by_price_band.json` reports test-set `mae`, `bias` (mean of true − predicted) and `n` for low/mid/high terciles of predicted price. Positive bias means under-prediction in that band; a large `high` bias or MAE signals weak extremes.
+
 Regenerate for real data by running without `--offline`; values will differ.
 
 ## Limitations
