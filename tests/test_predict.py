@@ -121,3 +121,67 @@ def test_drift_warnings_boundary_and_missing_stats(model_path):
 def test_main_prints_drift_warning(model_path, capsys):
     main(["--model", str(model_path), "--features", "1000,0,0,0,0,0,0,0"])
     assert "feature_0" in capsys.readouterr().err
+
+
+GOOD = "0,0,0,0,0,0,0,0"
+HEADER = ",".join(f"feature_{i}" for i in range(8))
+
+
+def _run_csv(model_path, tmp_path, text):
+    src = tmp_path / "in.csv"
+    out = tmp_path / "out.csv"
+    src.write_text(text)
+    code = None
+    try:
+        main(["--model", str(model_path), "--csv", str(src), "--output", str(out)])
+    except SystemExit as exc:
+        code = exc.code
+    return code, out.read_text().splitlines() if out.exists() else []
+
+
+def test_csv_valid_file(model_path, tmp_path):
+    code, lines = _run_csv(model_path, tmp_path, f"{GOOD}\n1,1,1,1,1,1,1,1\n")
+    assert code is None
+    assert len(lines) == 3
+    assert lines[0].split(",")[-3:] == ["prediction", "lower", "upper"]
+    assert len(lines[1].split(",")) == 11
+
+
+def test_csv_header_and_blank_lines(model_path, tmp_path):
+    code, lines = _run_csv(model_path, tmp_path, f"\n{HEADER}\n\n{GOOD}\n\n")
+    assert code is None
+    assert len(lines) == 2
+
+
+def test_csv_bad_row_reported(model_path, tmp_path, capsys):
+    code, lines = _run_csv(model_path, tmp_path, f"{GOOD}\n1,2,3\n{GOOD}\n")
+    assert code != 0
+    assert len(lines) == 3
+    assert "line 2:" in capsys.readouterr().err
+
+
+def test_csv_empty_file(model_path, tmp_path):
+    code, lines = _run_csv(model_path, tmp_path, "")
+    assert code is None
+    assert len(lines) == 1
+
+
+def test_csv_drift_warning_has_line(model_path, tmp_path, capsys):
+    code, lines = _run_csv(model_path, tmp_path, f"{GOOD}\n1e9,0,0,0,0,0,0,0\n")
+    assert code is None
+    assert len(lines) == 3
+    assert "line 2:" in capsys.readouterr().err
+
+
+def test_csv_stdout_default(model_path, tmp_path, capsys):
+    src = tmp_path / "in.csv"
+    src.write_text(f"{GOOD}\n")
+    main(["--model", str(model_path), "--csv", str(src)])
+    assert capsys.readouterr().out.splitlines()[0].endswith("prediction,lower,upper")
+
+
+def test_features_and_csv_exclusive(model_path, tmp_path):
+    with pytest.raises(SystemExit):
+        main(["--model", str(model_path), "--features", GOOD, "--csv", "x.csv"])
+    with pytest.raises(SystemExit):
+        main(["--model", str(model_path)])

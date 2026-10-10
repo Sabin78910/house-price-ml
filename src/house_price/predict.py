@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import math
 import sys
 
@@ -50,21 +51,72 @@ def drift_warnings(model, features: list[float]) -> list[tuple[int, float]]:
     ]
 
 
+def predict_csv(model, src, dst) -> bool:
+    """Write valid rows of `src` with prediction and interval to `dst`; True if all valid."""
+    writer = csv.writer(dst, lineterminator="\n")
+    writer.writerow([*(f"feature_{i}" for i in range(N_FEATURES)), "prediction", "lower", "upper"])
+    half = getattr(model, "interval_halfwidth_", None)
+    ok = True
+    first = True
+    reader = csv.reader(src)
+    for row in reader:
+        if not any(c.strip() for c in row):
+            continue
+        line = reader.line_num
+        raw = ",".join(row)
+        was_first, first = first, False
+        try:
+            features = parse_features(raw)
+        except ValueError as exc:
+            if was_first and "must be numbers" in str(exc):
+                continue  # header row
+            print(f"line {line}: {exc}", file=sys.stderr)
+            ok = False
+            continue
+        price = float(model.predict([features])[0])
+        bounds = ["", ""] if half is None else [price - half, price + half]
+        writer.writerow([*features, price, *bounds])
+        for i, z in drift_warnings(model, features):
+            print(
+                f"line {line}: warning: feature_{i} is {z:.1f} std devs from training mean",
+                file=sys.stderr,
+            )
+    return ok
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--model", default="artifacts/model.joblib", help="saved model path")
-    parser.add_argument("--features", required=True, help="8 comma-separated numbers")
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument("--features", help="8 comma-separated numbers")
+    source.add_argument("--csv", help="CSV file of rows of 8 numbers (header optional)")
+    parser.add_argument("--output", help="batch output CSV path (default: stdout)")
     parser.add_argument("--explain", action="store_true", help="show top 3 feature effects")
     args = parser.parse_args(argv)
 
-    try:
-        features = parse_features(args.features)
-    except ValueError as exc:
-        parser.error(str(exc))
+    if args.csv is None:
+        if args.output:
+            parser.error("--output requires --csv")
+        try:
+            features = parse_features(args.features)
+        except ValueError as exc:
+            parser.error(str(exc))
     try:
         model = load_model(args.model)
     except ValueError as exc:
         sys.exit(f"error: {exc}")
+    if args.csv is not None:
+        if args.explain:
+            parser.error("--explain is not supported with --csv")
+        with open(args.csv, newline="") as src:
+            if args.output:
+                with open(args.output, "w", newline="") as dst:
+                    ok = predict_csv(model, src, dst)
+            else:
+                ok = predict_csv(model, src, sys.stdout)
+        if not ok:
+            sys.exit(1)
+        return
     price = float(model.predict([features])[0])
     half = getattr(model, "interval_halfwidth_", None)
     if half is None:
