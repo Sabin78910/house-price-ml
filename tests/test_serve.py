@@ -81,3 +81,50 @@ def test_predict_returns_top_factors(base_url):
     _, body = post(base_url + "/predict", {"features": [1.0] * 8})
     assert len(body["factors"]) == 3
     assert set(body["factors"][0]) == {"feature", "effect"}
+
+
+def fetch(url):
+    with urllib.request.urlopen(url) as resp:
+        return resp, resp.read().decode()
+
+
+def test_index_has_strict_csp_and_no_inline_code(base_url):
+    resp, html = fetch(base_url + "/")
+    csp = resp.headers["Content-Security-Policy"]
+    assert "default-src 'none'" in csp
+    assert "script-src 'self'" in csp
+    assert "style-src 'self'" in csp
+    assert "unsafe-inline" not in csp
+    assert "<style" not in html
+    assert " style=" not in html
+    assert "<script src=" in html
+    assert "<script>" not in html
+    assert "onclick" not in html
+
+
+def test_index_has_sliders_region_picker_and_chart_slots(base_url):
+    _, html = fetch(base_url + "/")
+    assert html.count('type="range"') == 8
+    assert html.count('type="number"') == 8
+    assert html.count("data-lat=") == 9
+    for slot in ('id="range-bar"', 'id="waterfall"', 'id="price"'):
+        assert slot in html
+
+
+@pytest.mark.parametrize(
+    ("path", "ctype", "needle"),
+    [
+        ("/app.js", "text/javascript", "requestAnimationFrame"),
+        ("/app.css", "text/css", "prefers-reduced-motion"),
+    ],
+)
+def test_static_assets(base_url, path, ctype, needle):
+    resp, body = fetch(base_url + path)
+    assert resp.headers["Content-Type"].startswith(ctype)
+    assert needle in body
+    assert "Content-Security-Policy" in resp.headers
+
+
+def test_js_avoids_innerhtml(base_url):
+    _, js = fetch(base_url + "/app.js")
+    assert "innerHTML" not in js
