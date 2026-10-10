@@ -77,6 +77,7 @@ def train(offline: bool = False, seed: int = 42) -> tuple[Pipeline, dict[str, fl
         "r2": float(r2_score(y_test, pred)),
         "mae": float(mean_absolute_error(y_test, pred)),
         "rmse": float(np.sqrt(mean_squared_error(y_test, pred))),
+        "interval_coverage": float(np.mean(np.abs(y_test - pred) <= model.interval_halfwidth_)),
         "cv_r2_mean": float(cv_r2.mean()),
         "cv_r2_std": float(cv_r2.std()),
     }

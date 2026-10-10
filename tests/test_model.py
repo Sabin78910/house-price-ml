@@ -56,6 +56,22 @@ def test_interval_coverage_on_test_split():
     assert 0.85 <= coverage <= 0.95
 
 
+def test_metrics_report_interval_coverage(tmp_path):
+    import json
+    import sys
+
+    from house_price.model import main
+
+    _, metrics = train(offline=True)
+    assert 0.85 <= metrics["interval_coverage"] <= 0.95
+    assert metrics == train(offline=True)[1]
+
+    sys.argv = ["model", "--offline", "--out", str(tmp_path)]
+    main()
+    written = json.loads((tmp_path / "metrics.json").read_text())
+    assert written["interval_coverage"] == metrics["interval_coverage"]
+
+
 def test_metrics_json_has_required_keys(tmp_path):
     import json
     import sys
