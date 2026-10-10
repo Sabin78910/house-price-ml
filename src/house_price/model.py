@@ -53,8 +53,17 @@ def conformal_quantile(
     return float(np.quantile(scores, level, method="higher"))
 
 
-def error_by_band(y_true: np.ndarray, y_pred: np.ndarray) -> dict[str, dict[str, float]]:
-    """MAE and mean signed error (true - pred) per tercile band of predicted value."""
+def error_by_band(
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+    lower: np.ndarray | None = None,
+    upper: np.ndarray | None = None,
+) -> dict[str, dict[str, float]]:
+    """MAE and mean signed error (true - pred) per tercile band of predicted value.
+
+    With interval bounds, also adds `coverage` (share of y_true inside [lower, upper]) and
+    `mean_rel_width` (mean interval width / abs(mean prediction)) per band.
+    """
     order = np.argsort(y_pred, kind="stable")
     result = {}
     for name, idx in zip(("low", "mid", "high"), np.array_split(order, 3), strict=True):
@@ -64,6 +73,13 @@ def error_by_band(y_true: np.ndarray, y_pred: np.ndarray) -> dict[str, dict[str,
             "bias": float(np.mean(err)),
             "n": int(len(idx)),
         }
+        if lower is not None and upper is not None:
+            result[name]["coverage"] = float(
+                np.mean((y_true[idx] >= lower[idx]) & (y_true[idx] <= upper[idx]))
+            )
+            result[name]["mean_rel_width"] = float(
+                np.mean(upper[idx] - lower[idx]) / abs(np.mean(y_pred[idx]))
+            )
     return result
 
 
@@ -146,8 +162,8 @@ def train(offline: bool = False, seed: int = 42) -> tuple[Pipeline, dict[str, fl
     model.train_means_ = x_fit.mean(axis=0)
     model.train_stds_ = x_fit.std(axis=0)
     pred = model.predict(x_test)
-    model.error_by_band_ = error_by_band(y_test, pred)
     hw = model.interval_halfwidth_
+    model.error_by_band_ = error_by_band(y_test, pred, pred - hw, pred + hw)
     model.error_by_region_ = error_by_region(x_test, y_test, pred, pred - hw, pred + hw)
     cv = KFold(n_splits=5, shuffle=True, random_state=seed)
     cv_r2 = cross_val_score(build_model(seed), x, y, cv=cv, scoring="r2")
