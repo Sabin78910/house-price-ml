@@ -22,6 +22,8 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
 INTERVAL_ALPHA = 0.1  # 90% prediction interval
+LAT_COL, LON_COL = 6, 7  # California housing feature order
+MIN_REGION_ROWS = 5
 
 
 def load_data(offline: bool = False, seed: int = 42) -> tuple[np.ndarray, np.ndarray]:
@@ -65,6 +67,46 @@ def error_by_band(y_true: np.ndarray, y_pred: np.ndarray) -> dict[str, dict[str,
     return result
 
 
+def error_by_region(
+    x_test: np.ndarray,
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+    lower: np.ndarray,
+    upper: np.ndarray,
+    min_n: int = MIN_REGION_ROWS,
+) -> dict[str, dict[str, float]]:
+    """MAE, mean signed error (true - pred) and interval coverage per latitude x longitude tercile.
+
+    Terciles are computed on the given rows (latitude and longitude are columns 6 and 7).
+    Cells with fewer than `min_n` rows report only `n`; empty cells are omitted.
+    """
+
+    def tercile(values: np.ndarray) -> np.ndarray:
+        return np.searchsorted(np.quantile(values, [1 / 3, 2 / 3]), values, side="left")
+
+    lat, lon = tercile(x_test[:, LAT_COL]), tercile(x_test[:, LON_COL])
+    result = {}
+    for i, lat_name in enumerate(("south", "mid_lat", "north")):
+        for j, lon_name in enumerate(("west", "mid_lon", "east")):
+            idx = (lat == i) & (lon == j)
+            n = int(idx.sum())
+            if n == 0:
+                continue
+            if n < min_n:
+                result[f"{lat_name}_{lon_name}"] = {"n": n}
+                continue
+            err = y_true[idx] - y_pred[idx]
+            result[f"{lat_name}_{lon_name}"] = {
+                "n": n,
+                "mae": float(np.mean(np.abs(err))),
+                "bias": float(np.mean(err)),
+                "coverage": float(
+                    np.mean((y_true[idx] >= lower[idx]) & (y_true[idx] <= upper[idx]))
+                ),
+            }
+    return result
+
+
 def relative_error_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> dict[str, float]:
     """Median absolute percentage error and share of predictions within 10%/20% (fractions).
 
@@ -105,6 +147,8 @@ def train(offline: bool = False, seed: int = 42) -> tuple[Pipeline, dict[str, fl
     model.train_stds_ = x_fit.std(axis=0)
     pred = model.predict(x_test)
     model.error_by_band_ = error_by_band(y_test, pred)
+    hw = model.interval_halfwidth_
+    model.error_by_region_ = error_by_region(x_test, y_test, pred, pred - hw, pred + hw)
     cv = KFold(n_splits=5, shuffle=True, random_state=seed)
     cv_r2 = cross_val_score(build_model(seed), x, y, cv=cv, scoring="r2")
     metrics = {
@@ -154,6 +198,7 @@ def main() -> None:
     save_model(model, out / "model.joblib")
     (out / "metrics.json").write_text(json.dumps(metrics, indent=2))
     (out / "error_by_price_band.json").write_text(json.dumps(model.error_by_band_, indent=2))
+    (out / "error_by_region.json").write_text(json.dumps(model.error_by_region_, indent=2))
     report = importance_report(offline=args.offline)
     (out / "importance.json").write_text(json.dumps(report, indent=2))
     print(json.dumps(metrics, indent=2))

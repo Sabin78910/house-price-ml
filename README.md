@@ -13,7 +13,7 @@ PYTHONPATH=src .venv/bin/python -m house_price.model --offline # synthetic
 ```
 
 ## API / Output
-Outputs `artifacts/model.joblib` (plus `model.joblib.sha256`, verified by `predict` and `serve` before loading; a mismatch is refused, a missing checksum file only warns) and `artifacts/metrics.json` (R², MAE, RMSE, interval coverage, CV R², plus `mdape` — median absolute percentage error — and `within_10pct`/`within_20pct` — share of test predictions within 10%/20% of the true price, all as fractions; zero-valued targets are excluded from these three).
+Outputs `artifacts/model.joblib` (plus `model.joblib.sha256`, verified by `predict` and `serve` before loading; a mismatch is refused, a missing checksum file only warns) and `artifacts/metrics.json` (R², MAE, RMSE, interval coverage, CV R², plus `mdape` — median absolute percentage error — and `within_10pct`/`within_20pct` — share of test predictions within 10%/20% of the true price, all as fractions; zero-valued targets are excluded from these three). Also writes `artifacts/error_by_price_band.json` and `artifacts/error_by_region.json` (test-split MAE, mean signed error and 90% interval coverage per latitude-tercile × longitude-tercile cell, up to 9; cells with fewer than 5 test rows report only `n`).
 
 Batch prediction: `PYTHONPATH=src .venv/bin/python -m house_price.predict --csv input.csv --output out.csv` (8 numeric columns, header optional; output adds `prediction,lower,upper`; bad rows are reported as `line N: reason` on stderr and the exit code is non-zero).
 
