@@ -19,8 +19,10 @@ From `metrics.json` produced by `PYTHONPATH=src python -m house_price.model --of
 
 | Metric | Value |
 |---|---|
-| r2 (test) | 0.957 |
-| mae (test) | 26.13 |
+| r2 (test) | 0.950 |
+| mae (test) | 28.45 |
+| rmse (test) | 36.77 |
+| interval_coverage (test, 90% interval) | 0.925 |
 | cv_r2_mean | 0.953 |
 | cv_r2_std | 0.005 |
 
@@ -30,4 +32,5 @@ Regenerate for real data by running without `--offline`; values will differ.
 - Offline metrics reflect synthetic data only and say nothing about real-world accuracy.
 - California data is from 1990 and block-group level; it does not generalise to other regions or current prices.
 - Target values are capped in the original dataset; no fairness or bias analysis has been done.
-- No hyperparameter tuning or uncertainty estimates.
+- No hyperparameter tuning.
+- Split-conformal 90% prediction intervals (`interval_halfwidth_`) are provided; `interval_coverage` is the empirical coverage on the test split and may deviate from 0.90 on small samples or under distribution shift.
