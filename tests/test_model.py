@@ -153,3 +153,52 @@ def test_train_reports_relative_error_metrics():
     _, metrics = train(offline=True)
     assert metrics["mdape"] >= 0
     assert 0 <= metrics["within_10pct"] <= metrics["within_20pct"] <= 1
+
+
+def test_error_by_region_cells_and_small_cells():
+    import numpy as np
+
+    from house_price.model import error_by_region
+
+    rng = np.random.default_rng(0)
+    n = 300
+    x = rng.normal(size=(n, 8))
+    y_true = rng.normal(size=n)
+    y_pred = y_true + rng.normal(size=n)
+    result = error_by_region(x, y_true, y_pred, y_pred - 1.0, y_pred + 1.0)
+    assert 1 <= len(result) <= 9
+    assert sum(c["n"] for c in result.values()) == n
+    for cell in result.values():
+        assert set(cell) == {"n", "mae", "bias", "coverage"}
+        assert 0.0 <= cell["coverage"] <= 1.0
+
+    # tiny sample: every cell has < 5 rows, so only n is reported
+    small = error_by_region(x[:12], y_true[:12], y_pred[:12], y_pred[:12] - 1, y_pred[:12] + 1)
+    assert sum(c["n"] for c in small.values()) == 12
+    assert all(c == {"n": c["n"]} for c in small.values())
+
+
+def test_error_by_region_values_hand_computed():
+    import numpy as np
+
+    from house_price.model import error_by_region
+
+    x = np.zeros((6, 8))  # one region: all lat/lon identical
+    y_true = np.array([1.0, 2, 3, 4, 5, 10])
+    y_pred = np.zeros(6)
+    result = error_by_region(x, y_true, y_pred, y_pred - 4, y_pred + 4)
+    (cell,) = result.values()
+    assert cell == {"n": 6, "mae": 25 / 6, "bias": 25 / 6, "coverage": 4 / 6}
+
+
+def test_error_by_region_file_written_offline(tmp_path):
+    import json
+    import sys
+
+    from house_price.model import main
+
+    sys.argv = ["model", "--offline", "--out", str(tmp_path)]
+    main()
+    written = json.loads((tmp_path / "error_by_region.json").read_text())
+    assert sum(c["n"] for c in written.values()) == 400
+    assert all(c.get("coverage", 0.0) <= 1.0 for c in written.values())
