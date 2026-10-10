@@ -92,3 +92,34 @@ def test_r2_not_below_committed_baseline():
     baseline = json.loads((Path(__file__).parent / "baseline.json").read_text())
     _, metrics = train(offline=True)
     assert metrics["r2"] >= baseline["r2"] - 0.02
+
+
+def test_error_by_band_known_values():
+    import numpy as np
+
+    from house_price.model import error_by_band
+
+    y_pred = np.arange(9, dtype=float)
+    # low band over-predicted by 1, mid exact, high under-predicted by 2
+    y_true = y_pred + np.array([-1, -1, -1, 0, 0, 0, 2, 2, 2])
+    result = error_by_band(y_true, y_pred)
+    assert list(result) == ["low", "mid", "high"]
+    assert result["low"] == {"mae": 1.0, "bias": -1.0, "n": 3}
+    assert result["mid"] == {"mae": 0.0, "bias": 0.0, "n": 3}
+    assert result["high"] == {"mae": 2.0, "bias": 2.0, "n": 3}
+
+
+def test_error_by_band_file_written_offline(tmp_path):
+    import json
+    import sys
+
+    from house_price.model import main
+
+    sys.argv = ["model", "--offline", "--out", str(tmp_path)]
+    main()
+    written = json.loads((tmp_path / "error_by_price_band.json").read_text())
+    assert list(written) == ["low", "mid", "high"]
+    assert sum(b["n"] for b in written.values()) == 400  # 20% of 2000
+    sys.argv = ["model", "--offline", "--out", str(tmp_path / "b")]
+    main()
+    assert json.loads((tmp_path / "b" / "error_by_price_band.json").read_text()) == written
