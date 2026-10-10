@@ -123,3 +123,33 @@ def test_error_by_band_file_written_offline(tmp_path):
     sys.argv = ["model", "--offline", "--out", str(tmp_path / "b")]
     main()
     assert json.loads((tmp_path / "b" / "error_by_price_band.json").read_text()) == written
+
+
+def test_relative_error_metrics_hand_computed():
+    import numpy as np
+
+    from house_price.model import relative_error_metrics
+
+    y_true = np.array([100.0, 200.0, 400.0, 1000.0])
+    y_pred = np.array([105.0, 150.0, 400.0, 1500.0])  # errors: 5%, 25%, 0%, 50%
+    m = relative_error_metrics(y_true, y_pred)
+    assert m["mdape"] == 0.15  # median of 0, .05, .25, .5
+    assert m["within_10pct"] == 0.5
+    assert m["within_20pct"] == 0.5
+
+
+def test_relative_error_metrics_ignore_zero_targets():
+    import numpy as np
+
+    from house_price.model import relative_error_metrics
+
+    m = relative_error_metrics(np.array([0.0, 100.0]), np.array([5.0, 110.0]))
+    assert m == {"mdape": 0.1, "within_10pct": 1.0, "within_20pct": 1.0}
+    all_zero = relative_error_metrics(np.zeros(2), np.ones(2))
+    assert all_zero == {"mdape": 0.0, "within_10pct": 0.0, "within_20pct": 0.0}
+
+
+def test_train_reports_relative_error_metrics():
+    _, metrics = train(offline=True)
+    assert metrics["mdape"] >= 0
+    assert 0 <= metrics["within_10pct"] <= metrics["within_20pct"] <= 1

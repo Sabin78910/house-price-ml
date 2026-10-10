@@ -65,6 +65,23 @@ def error_by_band(y_true: np.ndarray, y_pred: np.ndarray) -> dict[str, dict[str,
     return result
 
 
+def relative_error_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> dict[str, float]:
+    """Median absolute percentage error and share of predictions within 10%/20% (fractions).
+
+    Rows with a target of 0 have no defined percentage error and are excluded; if every
+    target is 0, all three metrics are reported as 0.0.
+    """
+    mask = y_true != 0
+    if not mask.any():
+        return {"mdape": 0.0, "within_10pct": 0.0, "within_20pct": 0.0}
+    ape = np.abs(y_true[mask] - y_pred[mask]) / np.abs(y_true[mask])
+    return {
+        "mdape": float(np.median(ape)),
+        "within_10pct": float(np.mean(ape <= 0.10)),
+        "within_20pct": float(np.mean(ape <= 0.20)),
+    }
+
+
 def importance_report(offline: bool = False, seed: int = 42) -> dict[str, float]:
     """Permutation importance (mean R2 drop) of a model evaluated on the test split."""
     x, y = load_data(offline, seed)
@@ -95,6 +112,7 @@ def train(offline: bool = False, seed: int = 42) -> tuple[Pipeline, dict[str, fl
         "mae": float(mean_absolute_error(y_test, pred)),
         "rmse": float(np.sqrt(mean_squared_error(y_test, pred))),
         "interval_coverage": float(np.mean(np.abs(y_test - pred) <= model.interval_halfwidth_)),
+        **relative_error_metrics(y_test, pred),
         "cv_r2_mean": float(cv_r2.mean()),
         "cv_r2_std": float(cv_r2.std()),
     }
