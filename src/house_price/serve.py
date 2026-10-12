@@ -7,7 +7,7 @@ import json
 import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from house_price.model import load_model
+from house_price.model import load_model, prediction_interval
 from house_price.predict import drift_warnings, explain, parse_features
 from house_price.web import CSP, CSS, JS, PAGE
 
@@ -59,13 +59,13 @@ def make_handler(model):
                 self._send(400, {"error": str(exc)})
                 return
             price = float(model.predict([features])[0])
-            half = getattr(model, "interval_halfwidth_", 0.0)
+            low, high = prediction_interval(model, price) or (price, price)
             self._send(
                 200,
                 {
                     "price": price,
-                    "interval_low": price - half,
-                    "interval_high": price + half,
+                    "interval_low": float(low),
+                    "interval_high": float(high),
                     "factors": [{"feature": i, "effect": e} for i, e in explain(model, features)],
                     "warnings": [
                         {"feature": i, "z_score": z} for i, z in drift_warnings(model, features)
