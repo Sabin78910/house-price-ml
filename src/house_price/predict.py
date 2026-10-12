@@ -7,7 +7,7 @@ import csv
 import math
 import sys
 
-from house_price.model import load_model
+from house_price.model import load_model, prediction_interval
 
 N_FEATURES = 8
 DRIFT_Z = 3.0  # warn when an input is further than this many training std devs from the mean
@@ -55,7 +55,6 @@ def predict_csv(model, src, dst) -> bool:
     """Write valid rows of `src` with prediction and interval to `dst`; True if all valid."""
     writer = csv.writer(dst, lineterminator="\n")
     writer.writerow([*(f"feature_{i}" for i in range(N_FEATURES)), "prediction", "lower", "upper"])
-    half = getattr(model, "interval_halfwidth_", None)
     ok = True
     first = True
     reader = csv.reader(src)
@@ -74,7 +73,8 @@ def predict_csv(model, src, dst) -> bool:
             ok = False
             continue
         price = float(model.predict([features])[0])
-        bounds = ["", ""] if half is None else [price - half, price + half]
+        interval = prediction_interval(model, price)
+        bounds = ["", ""] if interval is None else [float(b) for b in interval]
         writer.writerow([*features, price, *bounds])
         for i, z in drift_warnings(model, features):
             print(
@@ -118,11 +118,11 @@ def main(argv: list[str] | None = None) -> None:
             sys.exit(1)
         return
     price = float(model.predict([features])[0])
-    half = getattr(model, "interval_halfwidth_", None)
-    if half is None:
+    interval = prediction_interval(model, price)
+    if interval is None:
         print(price)
     else:
-        print(f"{price} (90% interval: {price - half} to {price + half})")
+        print(f"{price} (90% interval: {float(interval[0])} to {float(interval[1])})")
     for i, z in drift_warnings(model, features):
         print(f"warning: feature_{i} is {z:.1f} std devs from training mean", file=sys.stderr)
     if args.explain:
