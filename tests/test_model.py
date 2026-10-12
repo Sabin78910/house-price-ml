@@ -237,3 +237,71 @@ def test_error_by_band_coverage_matches_global_offline():
     assert all(0.0 <= b["coverage"] <= 1.0 and b["mean_rel_width"] > 0 for b in bands.values())
     weighted = sum(b["coverage"] * b["n"] for b in bands.values()) / n
     assert abs(weighted - metrics["interval_coverage"]) < 1e-9
+
+
+def _run_main(out, *extra):
+    import sys
+
+    from house_price.model import main
+
+    sys.argv = ["model", "--offline", "--out", str(out), *extra]
+    main()
+
+
+def _seed_better_model(out):
+    import json
+
+    out.mkdir(exist_ok=True)
+    (out / "model.joblib").write_bytes(b"old model")
+    (out / "model.joblib.sha256").write_text("old checksum\n")
+    (out / "metrics.json").write_text(json.dumps({"r2": 5.0}))
+
+
+def test_history_appended_each_run(tmp_path):
+    import json
+
+    _run_main(tmp_path)
+    _run_main(tmp_path)
+    lines = (tmp_path / "metrics_history.jsonl").read_text().splitlines()
+    assert len(lines) == 2
+    entry = json.loads(lines[0])
+    assert {"timestamp", "seed", "offline", "r2", "mae", "rmse"} <= entry.keys()
+    assert entry["offline"] is True
+    assert entry["timestamp"].endswith("+00:00")
+
+
+def test_worse_model_refused(tmp_path, capsys):
+    import json
+
+    import pytest
+
+    _seed_better_model(tmp_path)
+    with pytest.raises(SystemExit) as exc:
+        _run_main(tmp_path)
+    assert exc.value.code != 0
+    assert "refusing" in capsys.readouterr().err
+    assert (tmp_path / "model.joblib").read_bytes() == b"old model"
+    assert (tmp_path / "model.joblib.sha256").read_text() == "old checksum\n"
+    assert json.loads((tmp_path / "metrics.json").read_text()) == {"r2": 5.0}
+    assert len((tmp_path / "metrics_history.jsonl").read_text().splitlines()) == 1
+
+
+def test_better_model_saved(tmp_path):
+    import json
+
+    _run_main(tmp_path)
+    first = json.loads((tmp_path / "metrics.json").read_text())
+    _run_main(tmp_path)  # equal score is accepted
+    assert json.loads((tmp_path / "metrics.json").read_text()) == first
+    (tmp_path / "metrics.json").write_text(json.dumps({"r2": -1.0}))
+    _run_main(tmp_path)
+    assert json.loads((tmp_path / "metrics.json").read_text())["r2"] > 0.8
+
+
+def test_force_overrides_guard(tmp_path):
+    import json
+
+    _seed_better_model(tmp_path)
+    _run_main(tmp_path, "--force")
+    assert json.loads((tmp_path / "metrics.json").read_text())["r2"] < 5.0
+    assert (tmp_path / "model.joblib").read_bytes() != b"old model"
