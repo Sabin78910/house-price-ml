@@ -1,4 +1,15 @@
-from house_price.model import build_model, load_data, train
+from types import SimpleNamespace
+
+import numpy as np
+from sklearn.model_selection import train_test_split
+
+from house_price.model import (
+    build_model,
+    conformal_quantile,
+    load_data,
+    prediction_interval,
+    train,
+)
 
 
 def test_offline_training_is_accurate():
@@ -50,9 +61,9 @@ def test_interval_coverage_on_test_split():
     model, _ = train(offline=True)
     x, y = load_data(offline=True)
     _, x_test, _, y_test = train_test_split(x, y, test_size=0.2, random_state=42)
-    half = model.interval_halfwidth_
-    assert half > 0
-    coverage = np.mean(np.abs(y_test - model.predict(x_test)) <= half)
+    assert model.interval_rel_halfwidth_ > 0
+    lower, upper = prediction_interval(model, model.predict(x_test))
+    coverage = np.mean((y_test >= lower) & (y_test <= upper))
     assert 0.85 <= coverage <= 0.95
 
 
@@ -305,3 +316,48 @@ def test_force_overrides_guard(tmp_path):
     _run_main(tmp_path, "--force")
     assert json.loads((tmp_path / "metrics.json").read_text())["r2"] < 5.0
     assert (tmp_path / "model.joblib").read_bytes() != b"old model"
+
+
+def _heteroscedastic(n, seed):
+    rng = np.random.default_rng(seed)
+    x = rng.uniform(0, 1, size=(n, 8))
+    mean = 50 + 450 * x[:, 0]
+    return x, mean * (1 + 0.1 * rng.standard_normal(n))  # noise proportional to price
+
+
+def test_conformal_quantile_is_relative():
+    class Const:
+        def predict(self, x):
+            return np.full(len(x), 100.0)
+
+    y = 100 + np.arange(1, 11) * 10.0  # relative errors 0.1 .. 1.0
+    assert conformal_quantile(Const(), np.zeros((10, 1)), y, 0.1) == 1.0
+
+
+def test_prediction_interval_scales_with_price_and_clips_at_zero():
+    model = SimpleNamespace(interval_rel_halfwidth_=0.5)
+    lower, upper = prediction_interval(model, np.array([10.0, 100.0]))
+    np.testing.assert_allclose(lower, [5.0, 50.0])
+    np.testing.assert_allclose(upper, [15.0, 150.0])
+    lower, _ = prediction_interval(SimpleNamespace(interval_rel_halfwidth_=1.5), np.array([10.0]))
+    assert lower[0] == 0.0
+    assert prediction_interval(SimpleNamespace(), np.array([1.0])) is None
+
+
+def test_interval_width_grows_with_price_on_heteroscedastic_data():
+    x, y = _heteroscedastic(3000, 0)
+    x_fit, x_cal, y_fit, y_cal = train_test_split(x, y, test_size=0.3, random_state=0)
+    x_test, y_test = _heteroscedastic(2000, 1)
+    model = build_model(0).fit(x_fit, y_fit)
+    pred = model.predict(x_test)
+    rel = conformal_quantile(model, x_cal, y_cal, 0.1)
+    abs_half = float(np.quantile(np.abs(y_cal - model.predict(x_cal)), 0.9))
+    model.interval_rel_halfwidth_ = rel
+    lower, upper = prediction_interval(model, pred)
+    width = upper - lower
+    assert np.corrcoef(pred, width)[0, 1] > 0.9
+    assert np.mean((y_test >= lower) & (y_test <= upper)) > 0.85
+    order = np.argsort(pred)
+    low = order[: len(order) // 3]
+    assert width[low].mean() / pred[low].mean() <= 2 * abs_half / pred[low].mean()
+    assert width[low].mean() < width[order[-len(order) // 3 :]].mean()

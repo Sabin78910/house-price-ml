@@ -26,12 +26,14 @@ INTERVAL_ALPHA = 0.1  # 90% prediction interval
 LAT_COL, LON_COL = 6, 7  # California housing feature order
 MIN_REGION_ROWS = 5
 DEFAULT_SEED = 42
+MIN_PRICE = 1e-6  # floor for the price a relative interval scales with
+OFFLINE_PRICE_FLOOR = 50.0
 
 
 def load_data(offline: bool = False, seed: int = 42) -> tuple[np.ndarray, np.ndarray]:
     if offline:
         x, y = make_regression(n_samples=2000, n_features=8, noise=10.0, random_state=seed)
-        return x, y
+        return x, y - y.min() + OFFLINE_PRICE_FLOOR  # prices are positive
     data = fetch_california_housing()
     return data.data, data.target
 
@@ -48,11 +50,33 @@ def build_model(seed: int = 42) -> Pipeline:
 def conformal_quantile(
     model: Pipeline, x_cal: np.ndarray, y_cal: np.ndarray, alpha: float
 ) -> float:
-    """Split conformal half-width: finite-sample corrected (1 - alpha) quantile of |residuals|."""
-    scores = np.abs(y_cal - model.predict(x_cal))
+    """Relative split conformal half-width.
+
+    Finite-sample corrected (1 - alpha) quantile of |y - pred| / max(pred, MIN_PRICE).
+    """
+    pred = model.predict(x_cal)
+    scores = np.abs(y_cal - pred) / np.maximum(pred, MIN_PRICE)
     n = len(scores)
     level = min(1.0, np.ceil((n + 1) * (1 - alpha)) / n)
     return float(np.quantile(scores, level, method="higher"))
+
+
+def prediction_interval(
+    model: Pipeline, pred: np.ndarray | float
+) -> tuple[np.ndarray, np.ndarray] | None:
+    """90% interval pred +/- pred * q (lower clipped at 0); None if the model has no interval.
+
+    Models saved before relative intervals fall back to their constant `interval_halfwidth_`.
+    """
+    pred = np.asarray(pred, dtype=float)
+    rel = getattr(model, "interval_rel_halfwidth_", None)
+    if rel is not None:
+        half = np.maximum(pred, MIN_PRICE) * rel
+    else:
+        half = getattr(model, "interval_halfwidth_", None)
+        if half is None:
+            return None
+    return np.maximum(pred - half, 0.0), pred + half
 
 
 def error_by_band(
@@ -158,22 +182,22 @@ def train(offline: bool = False, seed: int = 42) -> tuple[Pipeline, dict[str, fl
         x_train, y_train, test_size=0.25, random_state=seed
     )
     model = build_model(seed).fit(x_fit, y_fit)
-    # Half-width of the 90% prediction interval, calibrated on the held-out split.
-    model.interval_halfwidth_ = conformal_quantile(model, x_cal, y_cal, INTERVAL_ALPHA)
+    # Relative half-width of the 90% prediction interval, calibrated on the held-out split.
+    model.interval_rel_halfwidth_ = conformal_quantile(model, x_cal, y_cal, INTERVAL_ALPHA)
     model.train_medians_ = np.median(x_fit, axis=0)
     model.train_means_ = x_fit.mean(axis=0)
     model.train_stds_ = x_fit.std(axis=0)
     pred = model.predict(x_test)
-    hw = model.interval_halfwidth_
-    model.error_by_band_ = error_by_band(y_test, pred, pred - hw, pred + hw)
-    model.error_by_region_ = error_by_region(x_test, y_test, pred, pred - hw, pred + hw)
+    lower, upper = prediction_interval(model, pred)
+    model.error_by_band_ = error_by_band(y_test, pred, lower, upper)
+    model.error_by_region_ = error_by_region(x_test, y_test, pred, lower, upper)
     cv = KFold(n_splits=5, shuffle=True, random_state=seed)
     cv_r2 = cross_val_score(build_model(seed), x, y, cv=cv, scoring="r2")
     metrics = {
         "r2": float(r2_score(y_test, pred)),
         "mae": float(mean_absolute_error(y_test, pred)),
         "rmse": float(np.sqrt(mean_squared_error(y_test, pred))),
-        "interval_coverage": float(np.mean(np.abs(y_test - pred) <= model.interval_halfwidth_)),
+        "interval_coverage": float(np.mean((y_test >= lower) & (y_test <= upper))),
         **relative_error_metrics(y_test, pred),
         "cv_r2_mean": float(cv_r2.mean()),
         "cv_r2_std": float(cv_r2.std()),

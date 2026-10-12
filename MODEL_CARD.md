@@ -35,7 +35,7 @@ Regenerate for real data by running without `--offline`; values will differ.
 - California data is from 1990 and block-group level; it does not generalise to other regions or current prices.
 - Target values are capped in the original dataset; no fairness or bias analysis has been done.
 - No hyperparameter tuning.
-- Split-conformal 90% prediction intervals (`interval_halfwidth_`) are provided; `interval_coverage` is the empirical coverage on the test split and may deviate from 0.90 on small samples or under distribution shift.
+- Normalized split-conformal 90% prediction intervals are provided: calibration scores are `|y - ŷ| / max(ŷ, ε)`, the model stores the relative half-width `interval_rel_halfwidth_`, and the interval is `ŷ ± ŷ·q` (lower bound clipped at 0), so cheaper homes get narrower dollar ranges; `interval_coverage` is the empirical coverage on the test split and may deviate from 0.90 on small samples or under distribution shift.
 
 ## Integrity
 Training writes `model.joblib.sha256` (SHA-256). `predict` and `serve` verify it before `joblib.load` and refuse to load on mismatch; if the file is missing they warn on stderr and load anyway. This guards against corruption or tampering, not a malicious party who can replace both files.
