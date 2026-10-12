@@ -9,6 +9,7 @@ import argparse
 import hashlib
 import json
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
 
 import joblib
@@ -24,6 +25,7 @@ from sklearn.preprocessing import StandardScaler
 INTERVAL_ALPHA = 0.1  # 90% prediction interval
 LAT_COL, LON_COL = 6, 7  # California housing feature order
 MIN_REGION_ROWS = 5
+DEFAULT_SEED = 42
 
 
 def load_data(offline: bool = False, seed: int = 42) -> tuple[np.ndarray, np.ndarray]:
@@ -202,20 +204,48 @@ def load_model(path: str | Path) -> Pipeline:
     return joblib.load(path)
 
 
+def append_history(out: Path, metrics: dict[str, float], seed: int, offline: bool) -> None:
+    """Append one JSON line (UTC time, seed, offline flag, metrics) to metrics_history.jsonl."""
+    entry = {
+        "timestamp": datetime.now(UTC).isoformat(),
+        "seed": seed,
+        "offline": offline,
+        **metrics,
+    }
+    with (out / "metrics_history.jsonl").open("a") as f:
+        f.write(json.dumps(entry) + "\n")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--offline", action="store_true", help="use synthetic data")
     parser.add_argument("--out", default="artifacts", help="output directory")
+    parser.add_argument(
+        "--force", action="store_true", help="overwrite the saved model even if it scored better"
+    )
     args = parser.parse_args()
 
-    model, metrics = train(offline=args.offline)
+    model, metrics = train(offline=args.offline, seed=DEFAULT_SEED)
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
+    append_history(out, metrics, DEFAULT_SEED, args.offline)
+
+    metrics_path = out / "metrics.json"
+    if metrics_path.exists() and not args.force:
+        best = json.loads(metrics_path.read_text()).get("r2")
+        if best is not None and metrics["r2"] < best:
+            print(
+                f"refusing to overwrite {out / 'model.joblib'}: new r2 {metrics['r2']:.4f} "
+                f"is below existing r2 {best:.4f} (use --force to override)",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
     save_model(model, out / "model.joblib")
-    (out / "metrics.json").write_text(json.dumps(metrics, indent=2))
+    metrics_path.write_text(json.dumps(metrics, indent=2))
     (out / "error_by_price_band.json").write_text(json.dumps(model.error_by_band_, indent=2))
     (out / "error_by_region.json").write_text(json.dumps(model.error_by_region_, indent=2))
-    report = importance_report(offline=args.offline)
+    report = importance_report(offline=args.offline, seed=DEFAULT_SEED)
     (out / "importance.json").write_text(json.dumps(report, indent=2))
     print(json.dumps(metrics, indent=2))
 
